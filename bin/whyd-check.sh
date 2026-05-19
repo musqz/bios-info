@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
+# -----------------------------------------------------------------------
+# Copyright (c) 2026 Naltarunir (https://github.com/Naltarunir)
+# 
+# This software is licensed under the European Union Public License 1.2 
+# (EUPL-1.2) or later.
+#
+# The full text of the license can be found at:
+# https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+# -----------------------------------------------------------------------
+# Please refer to the README.md before raising an issue on GitHub. 
+#
+# NOTE: 'set -e' and 'pipefail' are intentionally omitted. 
+# Visit https://mywiki.wooledge.org/BashFAQ/105 for details.
+#
+# Each section handles its own errors verbosely rather than aborting silently.
+# 
 # bios-info — verify hardware/BIOS settings after a BIOS update
 #
 # One-time sudoers setup (replace 'youruser' with your actual username):
@@ -11,7 +27,7 @@
 # Note: run directly (bash bios-info), do not source it.
 # If sourced anyway, nounset state is saved and restored at the end.
 [[ $- == *u* ]] && _SS_U_WAS_SET=1 || _SS_U_WAS_SET=0
-set -uo pipefail
+set -u
 
 # ────────────────────────────────────────────────────────────────
 # COLOURS — disabled automatically when not a TTY or TERM=dumb
@@ -600,6 +616,3 @@ fi
 flush_verdicts
 sect "└───────────────────────────────────────────────────────────────┐"
 echo
-
-# Restore nounset if it wasn't active before (safeguard when sourced)
-[[ "${_SS_U_WAS_SET:-0}" -eq 0 ]] && set +u
