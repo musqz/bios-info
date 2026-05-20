@@ -9,6 +9,7 @@ tend to silently reset to defaults after a firmware update.
 ## Status
 
 Work in progress — features and distro support expanding.
+Tested on Arch/Mabox with Intel hardware. AMD and Nvidia GPU support included but less tested.
 
 ## Install
 
@@ -30,10 +31,32 @@ After install, run `bios-info --check` to verify dependencies and sudoers setup.
 
 ```bash
 bios-info              # standard check
-bios-info --check      # verify dependencies and sudoers setup
 bios-info --full       # extended check (C-states, SATA, ECC, boot order, Thunderbolt)
+bios-info --save       # save current BIOS state as baseline
+bios-info --compare    # compare current state against saved baseline
+bios-info --check      # verify dependencies and sudoers setup
 bios-info --help       # usage and sudoers setup instructions
 ```
+
+## BIOS drift detection
+
+The most useful feature — save your ideal BIOS state once, then check after
+every firmware update to see exactly what changed:
+
+```bash
+# 1. Set up BIOS as desired
+bios-info --save
+
+# 2. Update BIOS firmware
+
+# 3. Check what drifted
+bios-info --compare
+
+# 4. Fix settings in BIOS, then update baseline
+bios-info --save
+```
+
+Baseline stored at `~/.config/bios-info/expected.conf` — plain text, editable.
 
 ## Autostart / login check
 
