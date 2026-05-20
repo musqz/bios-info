@@ -20,13 +20,12 @@
 #
 # One-time sudoers setup (replace 'youruser' with your actual username):
 #   sudo visudo -f /etc/sudoers.d/system-status
-#   youruser ALL=(ALL) NOPASSWD: /usr/bin/dmidecode -t memory   ← Arch/Mabox
-#   youruser ALL=(ALL) NOPASSWD: /usr/sbin/dmidecode -t memory  ← Debian/Ubuntu
+#   youruser ALL=(ALL) NOPASSWD: /usr/bin/dmidecode -t memory   <- Arch/Mabox
+#   youruser ALL=(ALL) NOPASSWD: /usr/sbin/dmidecode -t memory  <- Debian/Ubuntu
 #   youruser ALL=(ALL) NOPASSWD: /usr/bin/lspci -s * -vv
 #   sudo chmod 0440 /etc/sudoers.d/system-status
 
 # Note: run directly (bash bios-info.sh), do not source it.
-# If sourced anyway, nounset state is saved and restored at the end.
 [[ $- == *u* ]] && _SS_U_WAS_SET=1 || _SS_U_WAS_SET=0
 set -u
 
@@ -61,6 +60,11 @@ if [[ -f /etc/os-release ]]; then
 fi
 
 # ────────────────────────────────────────────────────────────────
+# CONFIG
+# ────────────────────────────────────────────────────────────────
+BASELINE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bios-info/expected.conf"
+
+# ────────────────────────────────────────────────────────────────
 # HELPERS
 # ────────────────────────────────────────────────────────────────
 ok()   { echo -e "${GREEN}│ ✓ ${*}${RESET}"; }
@@ -92,27 +96,313 @@ flush_verdicts() {
 }
 
 # ────────────────────────────────────────────────────────────────
+# BASELINE COLLECTOR
+# Shared associative array populated by collect_* functions.
+# Used by --save and --compare.
+# ────────────────────────────────────────────────────────────────
+declare -A BASELINE=()
+
+collect_cpu() {
+    local cpu_vendor threads_per_core logical_cores iommu_groups microcode
+
+    cpu_vendor=$(awk -F: '/vendor_id/ {print $2; exit}' /proc/cpuinfo | xargs)
+    logical_cores=$(grep -c "^processor" /proc/cpuinfo)
+    threads_per_core=$(lscpu 2>/dev/null | awk '/Thread\(s\) per core/ {print $NF}')
+    threads_per_core=${threads_per_core:-1}
+    iommu_groups=$(ls /sys/class/iommu/ 2>/dev/null | wc -l)
+    microcode=$(awk '/microcode/ {print $3; exit}' /proc/cpuinfo 2>/dev/null)
+
+    BASELINE[SMT]=$(  [[ "$threads_per_core" -eq 2 ]] && echo "enabled" || echo "disabled")
+    if grep -q vmx /proc/cpuinfo; then
+        BASELINE[VIRT]="vtx"
+    elif grep -q svm /proc/cpuinfo; then
+        BASELINE[VIRT]="svm"
+    else
+        BASELINE[VIRT]="disabled"
+    fi
+    BASELINE[IOMMU]=$([[ "$iommu_groups" -gt 0 ]] && echo "active" || echo "inactive")
+    BASELINE[MICROCODE]="${microcode:-unknown}"
+
+    # C-states (Intel only)
+    if [[ -f /sys/module/intel_idle/parameters/max_cstate ]]; then
+        BASELINE[CSTATE]=$(cat /sys/module/intel_idle/parameters/max_cstate 2>/dev/null)
+    fi
+
+    # Power limits (Intel RAPL)
+    local rapl_path="/sys/class/powercap/intel-rapl/intel-rapl:0"
+    if [[ -d "$rapl_path" ]]; then
+        local pl1 pl2
+        pl1=$(cat "$rapl_path/constraint_0_power_limit_uw" 2>/dev/null)
+        pl2=$(cat "$rapl_path/constraint_1_power_limit_uw" 2>/dev/null)
+        [[ "$pl1" =~ ^[0-9]+$ ]] && BASELINE[PL1_W]="$((pl1/1000000))"
+        [[ "$pl2" =~ ^[0-9]+$ ]] && BASELINE[PL2_W]="$((pl2/1000000))"
+    fi
+}
+
+collect_ram() {
+    local dmidecode dmidecode_mem ram_speed ram_type
+
+    dmidecode=$(command -v dmidecode 2>/dev/null)
+    if [[ -n "$dmidecode" ]] && sudo -n "$dmidecode" -t memory >/dev/null 2>&1; then
+        dmidecode_mem=$(sudo -n "$dmidecode" -t memory 2>/dev/null)
+
+        ram_speed=$(awk -F: '/^\s*Speed:/ && /[0-9]/ && !/Unknown/ {
+            gsub(/^\s+|\s+$/, "", $2); print $2; exit}' <<< "$dmidecode_mem")
+        ram_type=$(awk '/^\s*Type:/ && !/Unknown/ && !/Other/ && !/Error/ {
+            gsub(/^\s+|\s+$/, "", $2); print $2; exit}' <<< "$dmidecode_mem")
+
+        BASELINE[RAM_SPEED]="${ram_speed:-unknown}"
+        BASELINE[RAM_TYPE]="${ram_type:-unknown}"
+    else
+        BASELINE[RAM_SPEED]="unavailable"
+        BASELINE[RAM_TYPE]="unavailable"
+    fi
+}
+
+collect_gpu() {
+    local gpu_line gpu_name gpu_pci gpu_vendor
+    local bar_info bar_size pcie_info pcie_speed pcie_width
+
+    gpu_line=$(lspci | grep -E "VGA|3D|Display" | head -1)
+    gpu_name=$(echo "$gpu_line" | cut -d: -f3- | xargs)
+    gpu_pci=$(echo "$gpu_line" | awk '{print $1}')
+
+    if echo "$gpu_name" | grep -qi "intel"; then         gpu_vendor="intel"
+    elif echo "$gpu_name" | grep -qi "amd\|radeon"; then  gpu_vendor="amd"
+    elif echo "$gpu_name" | grep -qi "nvidia"; then       gpu_vendor="nvidia"
+    else                                                   gpu_vendor="unknown"
+    fi
+
+    # Export for check_performance
+    GPU_VENDOR="$gpu_vendor"
+    GPU_PCI="$gpu_pci"
+
+    BASELINE[GPU_VENDOR]="$gpu_vendor"
+
+    if [[ "$gpu_vendor" != "intel" && -n "$gpu_pci" ]]; then
+        bar_info=$(sudo -n lspci -s "$gpu_pci" -vv 2>/dev/null | grep -i "Region 0")
+        if [[ -n "$bar_info" ]]; then
+            bar_size=$(echo "$bar_info" | sed -E 's/.*\[size=([^]]+)\].*/\1/')
+            if [[ -n "$bar_size" && "$bar_size" != "$bar_info" ]]; then
+                BASELINE[REBAR]=$([[ "$bar_size" == *"G"* ]] && echo "enabled" || echo "disabled")
+                BASELINE[REBAR_SIZE]="$bar_size"
+            fi
+        fi
+
+        pcie_info=$(sudo -n lspci -s "$gpu_pci" -vv 2>/dev/null | grep -i "LnkSta:")
+        if [[ -n "$pcie_info" ]]; then
+            pcie_speed=$(echo "$pcie_info" | sed -E 's/.*Speed ([^,]+),.*/\1/')
+            pcie_width=$(echo "$pcie_info" | sed -E 's/.*Width x([0-9]+).*/\1/')
+            BASELINE[PCIE_SPEED]="${pcie_speed:-unknown}"
+            BASELINE[PCIE_WIDTH]="${pcie_width:-unknown}"
+        fi
+    fi
+}
+
+collect_storage() {
+    local nvme_count=0 nvme_pci nvme_lnksta nvme_speed nvme_width
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        nvme_pci=$(echo "$line" | awk '{print $1}')
+        nvme_count=$((nvme_count + 1))
+        nvme_lnksta=$(sudo -n lspci -s "$nvme_pci" -vv 2>/dev/null | grep "LnkSta:")
+        if [[ -n "$nvme_lnksta" ]]; then
+            nvme_speed=$(echo "$nvme_lnksta" | sed -E 's/.*Speed ([^,]+),.*/\1/')
+            nvme_width=$(echo "$nvme_lnksta" | sed -E 's/.*Width x([0-9]+).*/\1/')
+            BASELINE["NVME${nvme_count}_SPEED"]="${nvme_speed:-unknown}"
+            BASELINE["NVME${nvme_count}_WIDTH"]="${nvme_width:-unknown}"
+        fi
+    done < <(lspci | grep -i "Non-Volatile\|NVMe")
+    BASELINE[NVME_COUNT]="$nvme_count"
+}
+
+collect_system() {
+    local bios_vendor bios_version bios_date sb_var sb_val tpm_ver
+
+    bios_vendor=$(cat /sys/class/dmi/id/bios_vendor 2>/dev/null)
+    bios_version=$(cat /sys/class/dmi/id/bios_version 2>/dev/null)
+    bios_date=$(cat /sys/class/dmi/id/bios_date 2>/dev/null)
+    BASELINE[BIOS_VERSION]="${bios_version:-unknown}"
+    BASELINE[BIOS_DATE]="${bios_date:-unknown}"
+    BASELINE[BIOS_VENDOR]="${bios_vendor:-unknown}"
+
+    BASELINE[BOOT_MODE]=$([[ -d /sys/firmware/efi ]] && echo "uefi" || echo "legacy")
+
+    sb_var=$(find /sys/firmware/efi/efivars -name "SecureBoot-*" 2>/dev/null | head -1)
+    if [[ -n "$sb_var" ]]; then
+        sb_val=$(od -An -t u1 "$sb_var" 2>/dev/null | awk '{print $NF}')
+        BASELINE[SECURE_BOOT]=$([[ "$sb_val" == "1" ]] && echo "enabled" || echo "disabled")
+    elif command -v mokutil >/dev/null 2>&1; then
+        BASELINE[SECURE_BOOT]=$(mokutil --sb-state 2>/dev/null | xargs)
+    else
+        BASELINE[SECURE_BOOT]="unknown"
+    fi
+
+    if [[ -d /sys/class/tpm/tpm0 ]]; then
+        tpm_ver=$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null)
+        BASELINE[TPM]="present_v${tpm_ver:-?}"
+    else
+        BASELINE[TPM]="absent"
+    fi
+}
+
+collect_all() {
+    collect_cpu
+    collect_ram
+    collect_gpu
+    collect_storage
+    collect_system
+}
+
+# ────────────────────────────────────────────────────────────────
+# SAVE
+# ────────────────────────────────────────────────────────────────
+show_save() {
+    echo ""
+    sect "┌─ SAVE BASELINE ───────────────────────────────────────────────┘"
+
+    # Warn if baseline already exists
+    if [[ -f "$BASELINE_FILE" ]]; then
+        warn "Baseline already exists: $BASELINE_FILE"
+        printf "│ Overwrite? (y/N): "
+        read -r answer
+        if [[ "${answer,,}" != "y" ]]; then
+            info "Cancelled — existing baseline kept"
+            sect "└───────────────────────────────────────────────────────────────┐"
+            echo ""
+            return
+        fi
+    fi
+
+    info "Collecting current BIOS state..."
+    collect_all
+
+    # Create config dir
+    local config_dir
+    config_dir=$(dirname "$BASELINE_FILE")
+    if ! mkdir -p "$config_dir" 2>/dev/null; then
+        fail "Could not create config directory: $config_dir"
+        sect "└───────────────────────────────────────────────────────────────┐"
+        echo ""
+        return
+    fi
+
+    # Write baseline file
+    {
+        echo "# bios-info baseline — saved $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "# Run 'bios-info --compare' to check against this state"
+        echo "# Edit values manually if needed"
+        echo ""
+        for key in $(echo "${!BASELINE[@]}" | tr ' ' '\n' | sort); do
+            echo "${key}=${BASELINE[$key]}"
+        done
+    } > "$BASELINE_FILE"
+
+    ok "Baseline saved: $BASELINE_FILE"
+    info ""
+    info "Current state:"
+    for key in $(echo "${!BASELINE[@]}" | tr ' ' '\n' | sort); do
+        info "  ${key}=${BASELINE[$key]}"
+    done
+
+    sect "└───────────────────────────────────────────────────────────────┐"
+    echo ""
+}
+
+# ────────────────────────────────────────────────────────────────
+# COMPARE
+# ────────────────────────────────────────────────────────────────
+show_compare() {
+    echo ""
+    sect "┌─ COMPARE AGAINST BASELINE ────────────────────────────────────┘"
+
+    # Check baseline exists
+    if [[ ! -f "$BASELINE_FILE" ]]; then
+        fail "No baseline found — run 'bios-info --save' first"
+        sect "└───────────────────────────────────────────────────────────────┐"
+        echo ""
+        return
+    fi
+
+    info "Baseline: $BASELINE_FILE"
+    info "Saved: $(grep '^# bios-info baseline' "$BASELINE_FILE" | \
+        sed 's/# bios-info baseline — saved //')"
+    echo "│"
+
+    # Load baseline into SAVED array
+    declare -A SAVED=()
+    while IFS='=' read -r key val; do
+        [[ "$key" =~ ^#  ]] && continue
+        [[ -z "$key"     ]] && continue
+        SAVED["$key"]="$val"
+    done < "$BASELINE_FILE"
+
+    # Collect current state
+    collect_all
+
+    # Compare each saved key against current
+    local drifted=0
+    for key in $(echo "${!SAVED[@]}" | tr ' ' '\n' | sort); do
+        local saved_val="${SAVED[$key]}"
+        local current_val="${BASELINE[$key]:-unknown}"
+
+        if [[ "$current_val" == "$saved_val" ]]; then
+            ok "${key}: ${current_val}"
+        elif [[ "$current_val" == "unknown" || "$current_val" == "unavailable" ]]; then
+            warn "${key}: expected '${saved_val}' — could not detect current value"
+            drifted=$((drifted + 1))
+        else
+            fail "${key}: expected '${saved_val}' — current '${current_val}'"
+            drifted=$((drifted + 1))
+        fi
+    done
+
+    echo "│"
+    if [[ "$drifted" -eq 0 ]]; then
+        ok "All settings match baseline — no drift detected"
+    else
+        fail "$drifted setting(s) drifted from baseline — check BIOS"
+    fi
+
+    sect "└───────────────────────────────────────────────────────────────┐"
+    echo ""
+}
+
+# ────────────────────────────────────────────────────────────────
 # HELP
 # ────────────────────────────────────────────────────────────────
 show_help() {
     cat <<'EOF'
-Usage: bios-info [--help|--check|--full]
+Usage: bios-info [--help|--check|--full|--save|--compare]
 
 Checks BIOS/hardware settings after a BIOS update.
 No arguments needed for normal use — just run it.
 
 Options:
-  --help    Show this message
-  --check   Verify setup requirements without running the full check
-  --full    Extended check — adds C-states, power limits (PL1/PL2),
-            Above 4G decoding, SATA mode, ECC, boot order, Thunderbolt
+  --help     Show this message
+  --check    Verify setup requirements without running the full check
+  --full     Extended check — adds C-states, power limits (PL1/PL2),
+             Above 4G decoding, SATA mode, ECC, boot order, Thunderbolt
+  --save     Save current BIOS state as baseline for future comparison
+  --compare  Compare current state against saved baseline
+
+Typical workflow after a BIOS update:
+  1. Set up BIOS as desired
+  2. Run: bios-info --save
+  3. Update BIOS firmware
+  4. Run: bios-info --compare
+  5. Fix any drifted settings
+  6. Run: bios-info --save   (update baseline)
+
+Baseline stored at: ~/.config/bios-info/expected.conf
 
 One-time setup (required for RAM speed, RAM type/slots, and PCIe/BAR info):
 
   1. Find your dmidecode path:
        which dmidecode
-       → /usr/bin/dmidecode   (Arch/Mabox)
-       → /usr/sbin/dmidecode  (Debian/Ubuntu)
+       -> /usr/bin/dmidecode   (Arch/Mabox)
+       -> /usr/sbin/dmidecode  (Debian/Ubuntu)
 
   2. Create sudoers entry:
        sudo visudo -f /etc/sudoers.d/system-status
@@ -300,7 +590,7 @@ check_cpu() {
     fi
 
     if [[ "$threads_per_core" -eq 2 ]]; then
-        verdict_ok "SMT: ENABLED ($physical_cores cores → $logical_cores threads)"
+        verdict_ok "SMT: ENABLED ($physical_cores cores -> $logical_cores threads)"
     elif [[ "$threads_per_core" -eq 1 ]]; then
         verdict_fail "SMT: DISABLED ($physical_cores cores, enable in BIOS)"
     fi
@@ -392,13 +682,12 @@ check_gpu() {
     gpu_name=$(echo "$gpu_line" | cut -d: -f3- | xargs)
     gpu_pci=$(echo "$gpu_line" | awk '{print $1}')
 
-    if echo "$gpu_name" | grep -qi "intel"; then        gpu_vendor="intel"
-    elif echo "$gpu_name" | grep -qi "amd\|radeon"; then gpu_vendor="amd"
-    elif echo "$gpu_name" | grep -qi "nvidia"; then      gpu_vendor="nvidia"
-    else                                                  gpu_vendor="unknown"
+    if echo "$gpu_name" | grep -qi "intel"; then         gpu_vendor="intel"
+    elif echo "$gpu_name" | grep -qi "amd\|radeon"; then  gpu_vendor="amd"
+    elif echo "$gpu_name" | grep -qi "nvidia"; then       gpu_vendor="nvidia"
+    else                                                   gpu_vendor="unknown"
     fi
 
-    # Export so check_performance() can use it
     GPU_VENDOR="$gpu_vendor"
     GPU_PCI="$gpu_pci"
 
@@ -664,11 +953,13 @@ check_system() {
 # ────────────────────────────────────────────────────────────────
 FULL_MODE=false
 case "${1:-}" in
-    --help|-h)  show_help;  exit 0 ;;
-    --check|-c) show_check; exit 0 ;;
-    --full|-f)  FULL_MODE=true ;;
-    "")         ;;
-    *)          echo "Unknown option: $1  (use --help)"; exit 1 ;;
+    --help|-h)    show_help;    exit 0 ;;
+    --check|-c)   show_check;   exit 0 ;;
+    --save|-s)    show_save;    exit 0 ;;
+    --compare|-C) show_compare; exit 0 ;;
+    --full|-f)    FULL_MODE=true ;;
+    "")           ;;
+    *)            echo "Unknown option: $1  (use --help)"; exit 1 ;;
 esac
 
 # ────────────────────────────────────────────────────────────────
