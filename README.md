@@ -10,25 +10,42 @@ tend to silently reset to defaults after a firmware update.
 
 Work in progress — features and distro support expanding.
 
+## Install
+
+```bash
+git clone https://github.com/musqz/bios-info.git
+cd bios-info
+bash install.sh
+```
+
+Installs to `~/.local/bin/` by default. Override if needed:
+
+```bash
+INSTALL_DIR=~/bin bash install.sh
+```
+
+After install, run `bios-info --check` to verify dependencies and sudoers setup.
+
 ## Usage
 
 ```bash
-bash bin/bios-info.sh              # standard check
-bash bin/bios-info.sh --check      # verify dependencies and sudoers setup
-bash bin/bios-info.sh --full       # extended check (C-states, SATA, ECC, boot order, Thunderbolt)
-bash bin/bios-info.sh --help       # usage and sudoers setup instructions
+bios-info              # standard check
+bios-info --check      # verify dependencies and sudoers setup
+bios-info --full       # extended check (C-states, SATA, ECC, boot order, Thunderbolt)
+bios-info --help       # usage and sudoers setup instructions
 ```
 
 ## Autostart / login check
 
-Use the wrapper to run automatically on login and log the output:
+Use the wrapper to run automatically on login and save a timestamped log:
 
 ```bash
-bash bin/bios-info-wrapper.sh
+bios-info-wrapper
 ```
 
-The wrapper saves a timestamped log to `~/.local/share/bios-info/` and opens
-it in your default text viewer.
+The log is saved to `~/.local/share/bios-info/` and opened in your default
+text viewer after each run. Add `bios-info-wrapper` to your session autostart
+to check settings automatically after every boot.
 
 ## Dependencies
 
@@ -40,12 +57,13 @@ it in your default text viewer.
 | vulkaninfo    | optional | Vulkan version                 |
 | efibootmgr    | optional | Boot order (--full)            |
 
-Run `--check` to verify what is installed and what sudoers entries are needed.
+Run `bios-info --check` to see what is installed and what sudoers entries
+are needed on your system.
 
 ## Sudoers setup
 
 Some checks require passwordless sudo for `dmidecode` and `lspci`.
-Run `--help` for exact setup instructions for your distro.
+Run `bios-info --help` for exact setup instructions for your distro.
 
 ## Distro support
 
@@ -57,3 +75,4 @@ Run `--help` for exact setup instructions for your distro.
 ## License
 
 Licensed under the [European Union Public License 1.2](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12) (EUPL-1.2).
+Originally based on [whyd-scripts](https://github.com/Naltarunir/whyd-scripts) by Naltarunir.
