@@ -1,0 +1,83 @@
+name: Build AppImage
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-appimage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: ver
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: sudo apt-get install -y imagemagick
+
+      - name: Download appimagetool
+        run: |
+          wget -q \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O appimagetool
+          chmod +x appimagetool
+
+      - name: Build AppImage
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          APPDIR="bios-info.AppDir"
+
+          mkdir -p "${APPDIR}/usr/bin"
+
+          # Scripts
+          cp bin/bios-info.sh        "${APPDIR}/usr/bin/bios-info"
+          cp bin/bios-info-wrapper.sh "${APPDIR}/usr/bin/bios-info-wrapper"
+          chmod 755 "${APPDIR}/usr/bin/bios-info" \
+                    "${APPDIR}/usr/bin/bios-info-wrapper"
+
+          # AppRun — entry point for the AppImage
+          cat > "${APPDIR}/AppRun" << 'EOF'
+#!/usr/bin/env bash
+SELF="$(readlink -f "$0")"
+HERE="${SELF%/*}"
+exec "${HERE}/usr/bin/bios-info" "$@"
+EOF
+          chmod 755 "${APPDIR}/AppRun"
+
+          # Desktop entry (Terminal=true since this is a CLI tool)
+          cat > "${APPDIR}/bios-info.desktop" << 'EOF'
+[Desktop Entry]
+Name=bios-info
+Exec=bios-info
+Icon=bios-info
+Type=Application
+Categories=System;
+Terminal=true
+EOF
+
+          # Minimal 256x256 icon (appimagetool requires one)
+          convert -size 256x256 xc:'#0d6efd' \
+              -fill white -font DejaVu-Sans -pointsize 28 \
+              -gravity center -annotate 0 'bios-info' \
+              "${APPDIR}/bios-info.png"
+
+          # APPIMAGE_EXTRACT_AND_RUN avoids needing FUSE on the CI runner
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
+              ./appimagetool --no-appstream "${APPDIR}" \
+              "bios-info-${VERSION}-x86_64.AppImage"
+
+      - name: Upload AppImage to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.ver.outputs.tag }}" \
+              "bios-info-${{ steps.ver.outputs.version }}-x86_64.AppImage" --clobber

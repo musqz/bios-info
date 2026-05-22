@@ -1,0 +1,71 @@
+name: Build Debian Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: ver
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build .deb package
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          PKG="bios-info_${VERSION}_all"
+
+          mkdir -p "${PKG}/DEBIAN"
+          mkdir -p "${PKG}/usr/bin"
+          mkdir -p "${PKG}/usr/share/doc/bios-info"
+
+          # Main script (installed as 'bios-info')
+          cp bin/bios-info.sh "${PKG}/usr/bin/bios-info"
+          chmod 755 "${PKG}/usr/bin/bios-info"
+
+          # Wrapper — fix hardcoded ~/.local/bin path to /usr/bin
+          cp bin/bios-info-wrapper.sh "${PKG}/usr/bin/bios-info-wrapper"
+          sed -i 's|"$HOME/.local/bin/bios-info.sh"|"/usr/bin/bios-info"|' \
+              "${PKG}/usr/bin/bios-info-wrapper"
+          chmod 755 "${PKG}/usr/bin/bios-info-wrapper"
+
+          # Docs
+          cp README.md   "${PKG}/usr/share/doc/bios-info/"
+          cp LICENSE.txt "${PKG}/usr/share/doc/bios-info/copyright"
+
+          # Control file (printf avoids heredoc indentation issues)
+          {
+            printf 'Package: bios-info\n'
+            printf 'Version: %s\n'    "${VERSION}"
+            printf 'Section: utils\n'
+            printf 'Priority: optional\n'
+            printf 'Architecture: all\n'
+            printf 'Depends: bash (>= 4.0), pciutils\n'
+            printf 'Recommends: dmidecode, mesa-utils, vulkan-tools, efibootmgr\n'
+            printf 'Maintainer: musqz <musqz@users.noreply.github.com>\n'
+            printf 'Homepage: https://github.com/musqz/bios-info\n'
+            printf 'Description: Verify hardware/BIOS settings after a BIOS update\n'
+            printf ' Checks CPU virtualization, IOMMU, SMT, RAM speed, GPU PCIe\n'
+            printf ' link, Resizable BAR, Secure Boot, TPM, and more. Can save a\n'
+            printf ' baseline and compare against it after a firmware update.\n'
+          } > "${PKG}/DEBIAN/control"
+
+          dpkg-deb --build --root-owner-group "${PKG}"
+
+      - name: Upload .deb to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.ver.outputs.tag }}" \
+              "bios-info_${{ steps.ver.outputs.version }}_all.deb" --clobber
