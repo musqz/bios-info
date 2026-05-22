@@ -98,4 +98,5 @@ Run `bios-info --help` for exact setup instructions for your distro.
 ## License
 
 Licensed under the [European Union Public License 1.2](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12) (EUPL-1.2).
+
 Originally based on [whyd-scripts](https://github.com/Naltarunir/whyd-scripts) by Naltarunir.

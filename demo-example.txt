@@ -1,0 +1,157 @@
+user@hostname $ bios-info
+
+╔════════════════════════════════════════════════════════════════╗
+║        SYSTEM STATUS CHECK - BIOS Settings ok?                 ║
+║        Verifying hardware settings after BIOS update           ║
+╚════════════════════════════════════════════════════════════════╝
+
+┌─ CPU ─────────────────────────────────────────────────────────┘
+│ Model: 12th Gen Intel(R) Core(TM) i5-12600K
+│ Speed: 1200 MHz (max: 4900 MHz)
+│ Microcode: 0x2c (intel-ucode 20260101)
+│ IOMMU: Not active (only needed for VM/GPU passthrough)
+│ ──────────────────────────────────────────────────────────────
+│ ✓ Microcode package up to date
+│ ✓ Intel VT-x: ENABLED
+│ ✓ SMT: ENABLED (6 cores -> 12 threads)
+└───────────────────────────────────────────────────────────────┐
+
+┌─ RAM ─────────────────────────────────────────────────────────┘
+│ Total: 15.5 GiB
+│ Type: DDR4
+│ Slots: 0 of 2 populated
+│ ──────────────────────────────────────────────────────────────
+│ ✓ Speed: 2666 MT/s
+└───────────────────────────────────────────────────────────────┐
+
+┌─ GPU & GRAPHICS ──────────────────────────────────────────────┘
+│ GPU: Intel Corporation Alder Lake-S GT1 [UHD Graphics 730] (rev 0a)
+│ Mesa: 4.6 (Compatibility Profile) Mesa 26.0.0-arch1.1
+│ Renderer: Mesa Intel(R) UHD Graphics 730 (ADL-S GT1)
+│ Vulkan: Available
+│ VRAM: Shared system RAM (integrated GPU)
+└───────────────────────────────────────────────────────────────┐
+
+┌─ STORAGE ─────────────────────────────────────────────────────┘
+│ NVMe 1: Samsung Electronics Co Ltd NVMe SSD Controller SM981/PM981/PM983 (rev 00)
+│         PCIe 16GT/s x4
+│ NVMe 2: Kingston Technology Company SNVS2000G [NV2 M.2 NVMe SSD] (rev 01)
+│         PCIe 8GT/s x4
+└───────────────────────────────────────────────────────────────┐
+
+┌─ PERFORMANCE FEATURES ────────────────────────────────────────┘
+│ BAR/PCIe: Integrated GPU — no discrete PCIe slot
+│ CPU Governor: powersave
+└───────────────────────────────────────────────────────────────┐
+
+┌─ SYSTEM INFO ─────────────────────────────────────────────────┘
+│ Kernel: 7.0.5-1-MANJARO
+│ BIOS: American Megatrends International, LLC. 1.C2
+│ Date: 03/15/2024
+│ ──────────────────────────────────────────────────────────────
+│ ✓ Boot Mode: UEFI
+│ ⚠ Secure Boot: DISABLED
+│ ✓ TPM: Present (version 2)
+└───────────────────────────────────────────────────────────────┐
+
+user@hostname ~ $ bios-info --full
+
+╔════════════════════════════════════════════════════════════════╗
+║     SYSTEM STATUS CHECK - BIOS Settings ok? [FULL MODE]        ║
+║     Verifying hardware settings after BIOS update              ║
+╚════════════════════════════════════════════════════════════════╝
+
+┌─ CPU ─────────────────────────────────────────────────────────┘
+│ Model: 12th Gen Intel(R) Core(TM) i5-12600K
+│ Speed: 1200 MHz (max: 4900 MHz)
+│ Microcode: 0x2c (intel-ucode 20260101)
+│ IOMMU: Not active (only needed for VM/GPU passthrough)
+│ Power Limits: PL1 125W / PL2 150W
+│ ──────────────────────────────────────────────────────────────
+│ ✓ Microcode package up to date
+│ ✓ Intel VT-x: ENABLED
+│ ✓ SMT: ENABLED (6 cores -> 12 threads)
+│ ✓ C-States: All enabled (max C9)
+└───────────────────────────────────────────────────────────────┐
+
+┌─ RAM ─────────────────────────────────────────────────────────┘
+│ Total: 15.5 GiB
+│ Type: DDR4
+│ Slots: 0 of 2 populated
+│ ECC: None
+│ ──────────────────────────────────────────────────────────────
+│ ✓ Speed: 2666 MT/s
+└───────────────────────────────────────────────────────────────┐
+
+┌─ GPU & GRAPHICS ──────────────────────────────────────────────┘
+│ GPU: Intel Corporation Alder Lake-S GT1 [UHD Graphics 730] (rev 0a)
+│ Mesa: 4.6 (Compatibility Profile) Mesa 26.0.0-arch1.1
+│ Renderer: Mesa Intel(R) UHD Graphics 730 (ADL-S GT1)
+│ Vulkan: Available
+│ VRAM: Shared system RAM (integrated GPU)
+└───────────────────────────────────────────────────────────────┐
+
+┌─ STORAGE ─────────────────────────────────────────────────────┘
+│ NVMe 1: Samsung Electronics Co Ltd NVMe SSD Controller SM981/PM981/PM983 (rev 00)
+│         PCIe 16GT/s x4
+│ NVMe 2: Kingston Technology Company SNVS2000G [NV2 M.2 NVMe SSD] (rev 01)
+│         PCIe 8GT/s x4
+│ ──────────────────────────────────────────────────────────────
+│ ✓ SATA 1: AHCI mode — Intel Corporation Raptor Lake SATA AHCI Controller (rev 11)
+└───────────────────────────────────────────────────────────────┐
+
+┌─ PERFORMANCE FEATURES ────────────────────────────────────────┘
+│ BAR/PCIe: Integrated GPU — no discrete PCIe slot
+│ Above 4G Decoding: No 64-bit prefetchable BARs detected
+│ CPU Governor: powersave
+└───────────────────────────────────────────────────────────────┐
+
+┌─ SYSTEM INFO ─────────────────────────────────────────────────┘
+│ Kernel: 7.0.5-1-MANJARO
+│ BIOS: American Megatrends International, LLC. 1.C2
+│ Date: 03/15/2024
+│ Boot Current: 0000
+│ Boot Order:
+│   ✓ Manjaro	HD(2,GPT,aabbccdd-1122-3344-5566-778899aabbcc,0x800,0xfa000)/\EFI\Manjaro\grubx64.efi
+│   ✓ UEFI:  USB	PciRoot(0x0)/Pci(0x14,0x0)/USB(5,0)/USB(0,0)/CDROM(1,0x400000,0x8000)0000424f
+│   ✓ UEFI OS	HD(2,GPT,aabbccdd-1122-3344-5566-778899aabbcc,0x800,0xfa000)/\EFI\BOOT\BOOTX64.EFI0000424f
+│   ✓ UEFI:CD/DVD Drive	BBS(129,,0x0)
+│   ✓ UEFI:Removable Device	BBS(130,,0x0)
+│   ✓ UEFI:Network Device	BBS(131,,0x0)
+│ Thunderbolt: Not detected or disabled in BIOS
+│ ──────────────────────────────────────────────────────────────
+│ ✓ Boot Mode: UEFI
+│ ⚠ Secure Boot: DISABLED
+│ ✓ TPM: Present (version 2)
+└───────────────────────────────────────────────────────────────┐
+
+user@hostname ~ $ bios-info --compare
+
+┌─ COMPARE AGAINST BASELINE ────────────────────────────────────┘
+│ Baseline: /home/user/.config/bios-info/expected.conf
+│ Saved: 2026-01-10 09:00:00
+│
+│ ✓ BIOS_DATE: 03/15/2024
+│ ✓ BIOS_VENDOR: American Megatrends International, LLC.
+│ ✓ BIOS_VERSION: 1.C2
+│ ✓ BOOT_MODE: uefi
+│ ✓ CSTATE: 9
+│ ✓ GPU_VENDOR: intel
+│ ✓ IOMMU: inactive
+│ ✓ MICROCODE: 0x2c
+│ ✓ NVME1_SPEED: 16GT/s
+│ ✓ NVME1_WIDTH: 4
+│ ✓ NVME2_SPEED: 8GT/s
+│ ✓ NVME2_WIDTH: 4
+│ ✓ NVME_COUNT: 2
+│ ✓ PL1_W: 125
+│ ✓ PL2_W: 150
+│ ✓ RAM_SPEED: 2666 MT/s
+│ ✓ RAM_TYPE: DDR4
+│ ✓ SECURE_BOOT: disabled
+│ ✓ SMT: enabled
+│ ✓ TPM: present_v2
+│ ✓ VIRT: vtx
+│
+│ ✓ All settings match baseline — no drift detected
+└───────────────────────────────────────────────────────────────┐
