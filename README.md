@@ -6,12 +6,15 @@ Useful after a BIOS update to confirm all settings are still correct —
 things like XMP/EXPO, Resizable BAR, PCIe speed, SMT, Secure Boot and more
 tend to silently reset to defaults after a firmware update.
 
-## Status
-
-Work in progress — features and distro support expanding.
-Tested on Arch/Mabox with Intel hardware. AMD and Nvidia GPU support included but less tested.
-
 ## Install
+
+**Debian / Ubuntu — download the `.deb` from [Releases](https://github.com/musqz/bios-info/releases):**
+
+```bash
+sudo dpkg -i bios-info_VERSION_all.deb
+```
+
+**All distros — install from source:**
 
 ```bash
 git clone https://github.com/musqz/bios-info.git
